@@ -1,110 +1,150 @@
 #!/bin/bash
 
-# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # 重置颜色
+NC='\033[0m'
 
-# 检查是否安装了 git
-if ! command -v git &> /dev/null; then
-    echo -e "${RED}错误: 未检测到 git，请先安装 git。${NC}"
-    exit 1
-fi
-
-# 项目路径定义
+# --- 路径跟踪设置 ---
+SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 PROJECT_DIR="spider-iptv"
-REPO_URL="https://github.com/maowei1125/spider-iptv.git"
+REPO_URL="https://github.com/xymn2023/spider-iptv.git"
+PY_FILE="$SCRIPT_DIR/$PROJECT_DIR/iptvdata.py"
 
 show_menu() {
     clear
     echo -e "${YELLOW}=========================================="
     echo -e "      Spider-IPTV Linux 一键管理脚本      "
+    echo -e "      脚本位置: $SCRIPT_DIR "
     echo -e "==========================================${NC}"
-    echo -e "1. ${GREEN}安装环境依赖 (FFmpeg, Python, Pip)${NC}"
-    echo -e "2. ${GREEN}克隆项目并安装 Python 库${NC}"
-    echo -e "3. ${GREEN}配置数据库信息 (交互修改)${NC}"
-    echo -e "4. ${YELLOW}一键启动抓取任务 (main.py)${NC}"
-    echo -e "5. ${YELLOW}单独启动抓取酒店源 (hotels.py)${NC}"
-    echo -e "6. ${YELLOW}单独启动抓取组播源 (multicast.py)${NC}"
-    echo -e "7. 查看生成的直播源 (iptv.txt)${NC}"
+    echo -e "1. 安装/修复系统环境 (含 FFmpeg, OpenCV)"
+    echo -e "2. 更新项目依赖 (解决 No module 报错)"
+    echo -e "3. ${RED}数据库深度修复 (自动设置并同步密码)${NC}"
+    echo -e "4. 同步配置 & 导入数据 (含 Token 修改)"
+    echo -e "5. 启动主程序抓取任务 (main.py)"
+    echo -e "6. 删除并清空数据库 (删除重装用)"
     echo -e "0. 退出脚本"
     echo -e "${YELLOW}==========================================${NC}"
-    echo -n "请选择操作 [0-7]: "
+    echo -n "请选择操作 [0-6]: "
 }
 
+# 1. 系统环境修复
 install_env() {
-    echo -e "${YELLOW}正在更新系统并安装 FFmpeg...${NC}"
-    sudo apt update && sudo apt install -y ffmpeg python3 python3-pip
-    echo -e "${GREEN}系统环境安装完成！${NC}"
-    sleep 2
+    echo -e "${YELLOW}正在修复系统组件...${NC}"
+    apt-get update
+    apt-get install -y ffmpeg python3 python3-pip git mariadb-server \
+    libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6
+    systemctl enable mariadb
+    echo -e "${GREEN}系统组件处理完成。${NC}"
+    read -r -p "按回车继续..." temp < /dev/tty
 }
 
+# 2. 补全 Python 依赖
 clone_project() {
-    if [ ! -d "$PROJECT_DIR" ]; then
-        echo -e "${YELLOW}正在克隆项目...${NC}"
-        git clone $REPO_URL
-    else
-        echo -e "${YELLOW}项目已存在，正在尝试更新...${NC}"
-        cd $PROJECT_DIR && git pull && cd ..
-    fi
-    echo -e "${YELLOW}安装 Python 依赖库...${NC}"
-    pip3 install bs4 m3u8 requests pymysql --break-system-packages || pip3 install bs4 m3u8 requests pymysql
-    echo -e "${GREEN}项目初始化完成！${NC}"
-    sleep 2
+    [ ! -d "$PROJECT_DIR" ] && git clone "$REPO_URL" || (cd "$PROJECT_DIR" && git pull && cd ..)
+    echo -e "${YELLOW}正在补全所有 Python 依赖库...${NC}"
+    pip3 install bs4 m3u8 requests pymysql mysql-connector-python \
+    opencv-python timeout-decorator --break-system-packages || \
+    pip3 install bs4 m3u8 requests pymysql mysql-connector-python \
+    opencv-python timeout-decorator
+    echo -e "${GREEN}Python 依赖库更新完毕！${NC}"
+    read -r -p "按回车继续..." temp < /dev/tty
 }
 
-config_db() {
-    if [ ! -d "$PROJECT_DIR" ]; then
-        echo -e "${RED}请先执行选项 2 克隆项目！${NC}"
-        sleep 2
-        return
-    fi
-    echo -e "${YELLOW}请输入您的 MySQL 数据库信息 (默认: root/root/127.0.0.1):${NC}"
-    read -p "数据库地址 [127.0.0.1]: " db_host
-    db_host=${db_host:-"127.0.0.1"}
-    read -p "数据库用户名 [root]: " db_user
-    db_user=${db_user:-"root"}
-    read -p "数据库密码: " db_pass
+# 3. 数据库深度修复 (强制改密并同步)
+setup_db() {
+    echo -e "${YELLOW}正在强制重置数据库权限并同步用户密码...${NC}"
+    systemctl stop mariadb
+    [ -f /etc/mysql/mariadb.conf.d/50-server.cnf ] && \
+    sed -i 's/bind-address.*/bind-address = 127.0.0.1/' /etc/mysql/mariadb.conf.d/50-server.cnf
 
-    echo -e "${YELLOW}正在批量更新配置文件中的数据库信息...${NC}"
-    # 使用 sed 替换 python 文件中的连接字符串（此处为逻辑示例，具体需根据源码字符串匹配）
-    find $PROJECT_DIR -name "*.py" -exec sed -i "s/host=['\"].*['\"]/host='$db_host'/g" {} +
-    find $PROJECT_DIR -name "*.py" -exec sed -i "s/user=['\"].*['\"]/user='$db_user'/g" {} +
-    find $PROJECT_DIR -name "*.py" -exec sed -i "s/password=['\"].*['\"]/password='$db_pass'/g" {} +
+    echo -n "请设置你要使用的数据库密码: "
+    read -s db_pass
+    echo ""
+
+    mysqld_safe --skip-grant-tables --skip-networking &
+    sleep 5
+
+    mysql -u root <<SQL
+FLUSH PRIVILEGES;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$db_pass';
+UPDATE mysql.user SET Password=PASSWORD('$db_pass') WHERE User='root' AND Host='localhost';
+UPDATE mysql.user SET plugin='mysql_native_password' WHERE User='root' AND Host='localhost';
+FLUSH PRIVILEGES;
+SQL
+
+    pkill -f mysqld
+    sleep 2
+    systemctl start mariadb
     
-    echo -e "${GREEN}数据库配置修改尝试完成，请确保已手动创建 iptv 数据库并导入 SQL。${NC}"
-    sleep 2
-}
-
-run_main() {
-    if [ ! -d "$PROJECT_DIR" ]; then echo -e "${RED}请先克隆项目${NC}"; return; fi
-    cd $PROJECT_DIR && python3 main.py
-    read -p "按回车键返回菜单..."
-}
-
-view_result() {
-    RESULT_FILE="$PROJECT_DIR/source/iptv.txt"
-    if [ -f "$RESULT_FILE" ]; then
-        cat "$RESULT_FILE"
+    STATUS=$(systemctl is-active mariadb)
+    if [ "$STATUS" = "active" ]; then
+        echo -e "${GREEN}✅ 数据库已启动并完成改密！${NC}"
+        # 自动同步密码到用户要求的 iptvdata.py
+        if [ -f "$PY_FILE" ]; then
+            sed -i "s/host=['\"].*['\"]/host='127.0.0.1'/g" "$PY_FILE"
+            sed -i "s/user=['\"].*['\"]/user='root'/g" "$PY_FILE"
+            sed -i "s/password=['\"].*['\"]/password='$db_pass'/g" "$PY_FILE"
+            echo -e "${GREEN}✅ 用户设置的密码已同步保存至: $PY_FILE${NC}"
+        fi
     else
-        echo -e "${RED}未找到结果文件，请先运行抓取任务。${NC}"
+        echo -e "${RED}❌ 启动失败，请检查数据库服务！${NC}"
     fi
-    read -p "按回车键返回菜单..."
+    read -r -p "按回车继续..." temp < /dev/tty
 }
 
-# 主循环
+# 4. 同步配置 (修复：找回 Token 修改功能)
+import_data() {
+    echo -n "请输入刚才设置的数据库密码: "
+    read -s db_pass
+    echo ""
+    
+    systemctl start mariadb
+
+    # 递归同步源码配置
+    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/host=['\"].*['\"]/host='127.0.0.1'/g" {} +
+    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/user=['\"].*['\"]/user='root'/g" {} +
+    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/password=['\"].*['\"]/password='$db_pass'/g" {} +
+
+    # --- 找回被去掉的 Token 修改功能 ---
+    echo -n "请输入 API Token (修改 multicast.py 113行，直接回车不修改): "
+    read api_token
+    if [ ! -z "$api_token" ]; then
+        MC_FILE="$PROJECT_DIR/multicast.py"
+        if [ -f "$MC_FILE" ]; then
+            sed -i "113s/api_token = .*/api_token = \"$api_token\"/" "$MC_FILE"
+            echo -e "${GREEN}Token 修改成功。${NC}"
+        else
+            echo -e "${RED}未找到 multicast.py，无法修改 Token。${NC}"
+        fi
+    fi
+
+    # 导入数据
+    mysql -u root -p"$db_pass" -e "CREATE DATABASE IF NOT EXISTS iptv CHARACTER SET utf8mb4;" 2>/dev/null
+    mysql -u root -p"$db_pass" iptv < "$PROJECT_DIR/data/iptv_data.sql"
+    echo -e "${GREEN}配置同步与数据导入完成！${NC}"
+    read -r -p "按回车继续..." temp < /dev/tty
+}
+
+# --- 脚本主循环 ---
 while true; do
     show_menu
     read choice
-    case $choice in
+    case "$choice" in
         1) install_env ;;
         2) clone_project ;;
-        3) config_db ;;
-        4) run_main ;;
-        5) cd $PROJECT_DIR && python3 hotels.py; read -p "回车继续..." ;;
-        6) cd $PROJECT_DIR && python3 multicast.py; read -p "回车继续..." ;;
-        7) view_result ;;
+        3) setup_db ;;
+        4) import_data ;;
+        5) 
+            systemctl start mariadb
+            echo -e "${YELLOW}启动主程序...${NC}"
+            cd "$PROJECT_DIR" && python3 main.py && cd ..
+            read -r -p "任务结束，按回车继续..." temp < /dev/tty ;;
+        6)
+            echo -e "${RED}警告：将彻底删除数据！${NC}"
+            read -p "输入 YES 确认删除: " confirm
+            [ "$confirm" = "YES" ] && mysql -u root -p -e "DROP DATABASE IF EXISTS iptv;"
+            read -r -p "按回车继续..." temp < /dev/tty ;;
         0) exit 0 ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
