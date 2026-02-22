@@ -9,7 +9,7 @@ NC='\033[0m'
 # 自动获取脚本所在绝对路径，确保在 /home 运行也能精准定位项目
 SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 PROJECT_DIR="spider-iptv"
-REPO_URL="https://github.com/maowei1125/spider-iptv"
+REPO_URL="https://github.com/xymn2023/spider-iptv.git"
 # 自动跟踪 iptvdata.py 的绝对路径
 PY_FILE="$SCRIPT_DIR/$PROJECT_DIR/iptvdata.py"
 
@@ -147,4 +147,4 @@ while true; do
         0) exit 0 ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
-done
+已完成
