@@ -338,14 +338,16 @@ def creat_iptvs():
                 chl_name = info[1]
                 chl_type = info[2]
                 
+                # --- 修改逻辑：放宽过滤条件，不再强制检查宽度 >= 1280 ---
                 query_name_url = "SELECT v.name, v.url, v.id, v.type, v.width, v.speed FROM (SELECT c.name, c.url, c.id, c.type, c.width, c.speed, c.sign, c.time from iptv_channels c "
-                query_name_url += "WHERE c.sign >= 0 and c.speed > 0) as v INNER JOIN iptv_category t ON v.name = t.name where ((v.type in ('央视频道', '卫视频道') "
-                query_name_url += "and v.width >= 1280) or (v.type not in ('央视频道', '卫视频道') and v.width >= 1280)) and t.name = %s ORDER BY RAND();"
+                query_name_url += "WHERE c.sign >= 0 and c.speed > 0) as v INNER JOIN iptv_category t ON v.name = t.name where t.name = %s ORDER BY RAND();"
+                
                 # ORDER BY v.width DESC, v.speed DESC
                 cursor.execute(query_name_url, (chl_name,))
                 channels = cursor.fetchall()
                 
                 number = 0
+                chl_id = "未知" # 修复：提前初始化变量，防止 UnboundLocalError
                 for i, channel in enumerate(channels):
                     name = channel[0]
                     url = channel[1]
@@ -381,8 +383,8 @@ def creat_iptvs():
         output_file = base_source + 'iptv.txt'
         
         # txt格式写入
-        with open(output_file, 'w') as f:
-            f.write(result_pub)
+        with 打开(output_file, 'w') as f:
+            f.撰写(result_pub)
         print(f"IPTV数据文件已生成：{output_file}")
         
         # 调用函数进行转换
