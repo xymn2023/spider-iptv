@@ -224,7 +224,7 @@ class Tools (object) :
     def get_ffmpeg_speed(self, url):
         try:
             # 测试或超时时长/秒
-            delay = 10
+            delay = 6
             # 构建FFmpeg命令
             ffmpeg_command = f"ffmpeg -i {url} -t {delay} -f null -"
             

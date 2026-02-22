@@ -149,7 +149,7 @@ def sweep_speeds():
         print(f"{current_time} 总数据{len(channels)}")
         
         # 多线程处理数量
-        queues_count = 5
+        queues_count = 10
         # 创建线程队列
         data_queues = [Queue() for _ in range(queues_count)]
         for i, channel in enumerate(channels):
@@ -190,7 +190,7 @@ def internet_lives():
         # 获取文件大小（以字节为单位）
         file_size = os.path.getsize(file_path)
         # 文件大于3KB
-        if file_size < 3 * 1024:
+        if file_size < 3 * 480:
             print(f"{current_time} 文件大小不满足条件，{file_path}可能是空内容，不处理直播资源！")
             return
         
@@ -221,10 +221,10 @@ def internet_lives():
             # 信任频道
             sign = 0
             # 播放速度
-            speed = 5.00
+            speed = 1.00
             # 宽度和高度
-            width = 1280
-            height = 720
+            width = 720
+            height = 480
             # 帧速率
             frame = 25
             # 初始化集合数据

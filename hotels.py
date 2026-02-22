@@ -98,7 +98,7 @@ def hotel_channels(ip, port):
 
     # 发起HTTP请求获取网页内容
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=6)
         # 检查响应状态码
         if response.status_code == 200:
             # 解析JSON数据
@@ -249,7 +249,7 @@ def gyssi_hotels():
                 # 获取文件大小（以字节为单位）
                 file_size = os.path.getsize(base_file)
                 # 文件小于1KB无效
-                if file_size < 1 * 1024:
+                if file_size < 1 * 2048:
                     print(f"{current_time} M3U省份文件：{base_file}，下载无效")
                     continue
                 
