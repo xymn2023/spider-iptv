@@ -1,4 +1,3 @@
-cat << 'EOF' > iptv.sh && chmod +x iptv.sh && ./iptv.sh
 #!/bin/bash
 
 RED='\033[0;31m'
@@ -10,83 +9,100 @@ PROJECT_DIR="spider-iptv"
 REPO_URL="https://github.com/xymn2023/spider-iptv.git"
 
 show_menu() {
+    clear
     echo -e "${YELLOW}=========================================="
     echo -e "      Spider-IPTV Linux 一键管理脚本      "
     echo -e "==========================================${NC}"
-    echo -e "1. 安装系统环境 (FFmpeg, Python, MySQL客户端)"
-    echo -e "2. 克隆项目并安装依赖"
-    echo -e "3. 初始化数据库 (导入 iptv_data.sql)"
-    echo -e "4. 配置数据库连接参数 (修改源码)"
-    echo -e "5. 启动全自动抓取任务 (main.py)"
-    echo -e "6. 查看抓取结果 (iptv.txt)"
+    echo -e "1. 安装/修复系统环境 (含 FFmpeg, OpenCV)"
+    echo -e "2. 更新项目依赖 (解决 No module 报错)"
+    echo -e "3. ${RED}数据库深度修复 (解决 111 连接错误)${NC}"
+    echo -e "4. 同步配置 & 导入数据"
+    echo -e "5. 启动主程序抓取任务 (main.py)"
+    echo -e "6. 删除并清空数据库 (删除重装用)"
     echo -e "0. 退出脚本"
     echo -e "${YELLOW}==========================================${NC}"
     echo -n "请选择操作 [0-6]: "
 }
 
+# 1. 系统环境修复
 install_env() {
-    echo -e "${YELLOW}正在更新并安装组件...${NC}"
+    echo -e "${YELLOW}正在修复系统组件...${NC}"
     apt-get update
-    apt-get install -y ffmpeg python3 python3-pip git default-mysql-client mariadb-client || echo "包名安装略有差异，请检查"
-    echo -e "${GREEN}安装尝试完成。${NC}"
-    echo -e "${YELLOW}按回车键返回菜单...${NC}"
-    read temp
+    apt-get install -y ffmpeg python3 python3-pip git mariadb-server \
+    libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6
+    systemctl enable mariadb
+    echo -e "${GREEN}系统组件处理完成。${NC}"
+    read -p "按回车继续..." temp
 }
 
+# 2. 补全 Python 所有依赖
 clone_project() {
-    if [ ! -d "$PROJECT_DIR" ]; then
-        git clone "$REPO_URL"
-    else
-        cd "$PROJECT_DIR" && git pull && cd ..
-    fi
-    pip3 install bs4 m3u8 requests pymysql --break-system-packages || pip3 install bs4 m3u8 requests pymysql
-    echo -e "${GREEN}项目处理完成。${NC}"
-    echo -e "${YELLOW}按回车键返回菜单...${NC}"
-    read temp
+    [ ! -d "$PROJECT_DIR" ] && git clone "$REPO_URL" || (cd "$PROJECT_DIR" && git pull && cd ..)
+    echo -e "${YELLOW}正在补全所有 Python 依赖库...${NC}"
+    # 一次性安装所有已知缺失模块
+    pip3 install bs4 m3u8 requests pymysql mysql-connector-python \
+    opencv-python timeout-decorator --break-system-packages || \
+    pip3 install bs4 m3u8 requests pymysql mysql-connector-python \
+    opencv-python timeout-decorator
+    echo -e "${GREEN}Python 依赖库更新完毕！${NC}"
+    read -p "按回车继续..." temp
 }
 
-init_database() {
-    if ! command -v mysql &> /dev/null; then
-        echo -e "${RED}错误：未发现 mysql 命令。请先运行选项 1。${NC}"
+# 3. 数据库深度修复
+setup_db() {
+    echo -e "${YELLOW}正在进行数据库深度自愈...${NC}"
+    # 强制修正 MariaDB 配置文件，允许 127.0.0.1 访问
+    [ -f /etc/mysql/mariadb.conf.d/50-server.cnf ] && \
+    sed -i 's/bind-address.*/bind-address = 127.0.0.1/' /etc/mysql/mariadb.conf.d/50-server.cnf
+    
+    systemctl restart mariadb
+    sleep 2
+    
+    echo -n "请设置新数据库 root 密码: "
+    read -s db_pass
+    echo ""
+    
+    # 强制重置 root 权限和插件
+    sudo mysql -u root <<SQL
+ALTER USER 'root'@'localhost' IDENTIFIED BY '$db_pass';
+UPDATE mysql.user SET plugin='mysql_native_password' WHERE User='root' AND Host='localhost';
+FLUSH PRIVILEGES;
+SQL
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}数据库修复成功！3306 端口已开放。${NC}"
     else
-        echo -e "${YELLOW}--- 数据库初始化 ---${NC}"
-        echo -n "MySQL root 用户名 [root]: "
-        read db_root_user
-        db_root_user=${db_root_user:-"root"}
-        echo -n "MySQL root 密码: "
-        read -s db_root_pass
-        echo ""
-        SQL_FILE="$PROJECT_DIR/data/iptv_data.sql"
-        if [ ! -f "$SQL_FILE" ]; then
-            echo -e "${RED}找不到 SQL 文件: $SQL_FILE${NC}"
-        else
-            mysql -h 127.0.0.1 -u"$db_root_user" -p"$db_root_pass" -e "CREATE DATABASE IF NOT EXISTS iptv CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null
-            if mysql -h 127.0.0.1 -u"$db_root_user" -p"$db_root_pass" iptv < "$SQL_FILE"; then
-                echo -e "${GREEN}数据库初始化成功！${NC}"
-            else
-                echo -e "${RED}初始化失败，请检查密码或服务状态。${NC}"
-            fi
-        fi
+        echo -e "${RED}修复失败，请尝试先执行选项 6 删除旧库。${NC}"
     fi
-    echo -e "${YELLOW}按回车键返回菜单...${NC}"
-    read temp
+    read -p "按回车继续..." temp
 }
 
-config_source() {
-    echo -n "数据库地址 [127.0.0.1]: "
-    read db_host
-    db_host=${db_host:-"127.0.0.1"}
-    echo -n "数据库用户名 [root]: "
-    read db_user
-    db_user=${db_user:-"root"}
-    echo -n "数据库密码: "
-    read db_pass
-    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/host=['\"].*['\"]/host='$db_host'/g" {} +
-    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/user=['\"].*['\"]/user='$db_user'/g" {} +
+# 4. 同步配置
+import_data() {
+    echo -n "请输入刚才设置的数据库密码: "
+    read -s db_pass
+    echo ""
+    
+    # 自动开启数据库服务以防万一
+    systemctl start mariadb
+
+    # 修改源码配置
+    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/host=['\"].*['\"]/host='127.0.0.1'/g" {} +
+    find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/user=['\"].*['\"]/user='root'/g" {} +
     find "$PROJECT_DIR" -name "*.py" -exec sed -i "s/password=['\"].*['\"]/password='$db_pass'/g" {} +
-    echo -e "${GREEN}配置已同步。${NC}"
-    echo -e "${YELLOW}按回车键返回菜单...${NC}"
-    read temp
+
+    # Token 修改
+    echo -n "请输入 API Token (直接回车不修改): "
+    read api_token
+    if [ ! -z "$api_token" ]; then
+        sed -i "113s/api_token = .*/api_token = \"$api_token\"/" "$PROJECT_DIR/multicast.py"
+    fi
+
+    # 导入数据
+    mysql -u root -p"$db_pass" -e "CREATE DATABASE IF NOT EXISTS iptv CHARACTER SET utf8mb4;" 2>/dev/null
+    mysql -u root -p"$db_pass" iptv < "$PROJECT_DIR/data/iptv_data.sql"
+    echo -e "${GREEN}配置同步与数据导入完成！${NC}"
+    read -p "按回车继续..." temp
 }
 
 while true; do
@@ -95,35 +111,19 @@ while true; do
     case "$choice" in
         1) install_env ;;
         2) clone_project ;;
-        3) init_database ;;
-        4) config_source ;;
+        3) setup_db ;;
+        4) import_data ;;
         5) 
-            if [ -d "$PROJECT_DIR" ]; then
-                cd "$PROJECT_DIR" && python3 main.py && cd ..
-            else
-                echo -e "${RED}请先执行选项 2${NC}"
-            fi
-            echo -e "${YELLOW}按回车键返回菜单...${NC}"
-            read temp
-            ;;
+            # 运行前强制检查数据库状态
+            systemctl start mariadb
+            echo -e "${YELLOW}启动中... 请观察是否还有报错${NC}"
+            cd "$PROJECT_DIR" && python3 main.py && cd ..
+            read -p "任务结束，按回车继续..." temp ;;
         6)
-            if [ -f "$PROJECT_DIR/source/iptv.txt" ]; then
-                cat "$PROJECT_DIR/source/iptv.txt"
-            else
-                echo "未找到结果文件"
-            fi
-            echo -e "${YELLOW}按回车键返回菜单...${NC}"
-            read temp
+            echo -e "${RED}警告：将彻底删除数据！${NC}"
+            read -p "输入 YES 确认删除: " confirm
+            [ "$confirm" = "YES" ] && mysql -u root -p -e "DROP DATABASE IF EXISTS iptv;"
             ;;
-        0)
-            echo -n "确认退出? [y/n]: "
-            read confirm
-            [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] && exit 0
-            ;;
-        *)
-            echo "无效选项"
-            sleep 1
-            ;;
+        0) exit 0 ;;
     esac
-已完成
-EOF
+done
