@@ -147,4 +147,4 @@ while true; do
         0) exit 0 ;;
         *) echo -e "${RED}无效选择${NC}"; sleep 1 ;;
     esac
-已完成
+done
